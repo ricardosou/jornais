@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Jornais</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0f0f0f;
+      color: #e0e0e0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      min-height: 100vh;
+    }
+
+    header {
+      padding: 20px 20px 16px;
+      border-bottom: 1px solid #1a1a1a;
+    }
+
+    header h1 {
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: -0.02em;
+    }
+
+    .date {
+      font-size: 0.78rem;
+      color: #555;
+      margin-top: 4px;
+      text-transform: capitalize;
+    }
+
+    main { padding: 0 16px 56px; }
+
+    .section { margin-top: 28px; }
+
+    .section-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #444;
+      margin-bottom: 10px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 10px;
+    }
+
+    .card-inner {
+      position: relative;
+      aspect-ratio: 3 / 4;
+      overflow: hidden;
+      border-radius: 5px;
+      cursor: pointer;
+      background: linear-gradient(90deg, #181818 25%, #252525 50%, #181818 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s ease-in-out infinite;
+      transition: transform 0.15s;
+    }
+
+    .card-inner:hover:not([data-error]) { transform: scale(1.02); }
+
+    .card-inner.loaded {
+      animation: none;
+      background: #111;
+    }
+
+    .card-inner[data-error] {
+      animation: none;
+      cursor: default;
+    }
+
+    .card-inner img {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0;
+      transition: opacity 0.25s;
+    }
+
+    .card-inner.loaded img { opacity: 1; }
+
+    .card-name {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 22px 8px 7px;
+      background: linear-gradient(transparent, rgba(0,0,0,0.82));
+      color: #fff;
+      font-size: 0.72rem;
+      font-weight: 500;
+      text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+    }
+
+    .card-error {
+      position: absolute;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 12px;
+      color: #444;
+      font-size: 0.72rem;
+      line-height: 1.5;
+    }
+
+    .card-inner[data-error] .card-error { display: flex; }
+
+    @keyframes shimmer {
+      0%   { background-position: -200% 0; }
+      100% { background-position:  200% 0; }
+    }
+
+    /* ── Lightbox ── */
+
+    #lightbox {
+      position: fixed;
+      inset: 0;
+      background: #000;
+      display: none;
+      z-index: 100;
+    }
+
+    #lb-viewport {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+      overflow: hidden;
+    }
+
+    #lb-img {
+      max-width: 100vw;
+      max-height: 100vh;
+      display: block;
+      user-select: none;
+      -webkit-user-drag: none;
+      transform-origin: center center;
+      will-change: transform;
+      cursor: grab;
+    }
+
+    #lb-img.grabbing { cursor: grabbing; }
+
+    #lb-spinner {
+      position: absolute;
+      top: calc(50% - 18px);
+      left: calc(50% - 18px);
+      width: 36px;
+      height: 36px;
+      border: 3px solid rgba(255,255,255,0.12);
+      border-top-color: rgba(255,255,255,0.65);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      pointer-events: none;
+    }
+
+    #lb-spinner.hidden { display: none; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    #lb-close {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      background: rgba(0,0,0,0.45);
+      border: none;
+      color: #fff;
+      font-size: 1.75rem;
+      line-height: 1;
+      cursor: pointer;
+      padding: 5px 10px;
+      border-radius: 5px;
+      z-index: 101;
+      opacity: 0.7;
+    }
+
+    #lb-close:hover { opacity: 1; }
+
+    #lb-prev, #lb-next {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(255,255,255,0.07);
+      border: none;
+      color: #fff;
+      font-size: 2rem;
+      line-height: 1;
+      cursor: pointer;
+      padding: 20px 13px;
+      z-index: 101;
+      opacity: 0.55;
+      border-radius: 4px;
+    }
+
+    #lb-prev { left: 4px; }
+    #lb-next { right: 4px; }
+    #lb-prev:hover, #lb-next:hover { opacity: 1; background: rgba(255,255,255,0.14); }
+
+    #lb-name {
+      position: absolute;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.55);
+      color: rgba(255,255,255,0.85);
+      font-size: 0.85rem;
+      padding: 5px 14px;
+      border-radius: 20px;
+      pointer-events: none;
+      white-space: nowrap;
+      z-index: 101;
+    }
+
+    @media (max-width: 420px) {
+      .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Jornais</h1>
+  <div class="date"></div>
+</header>
+
+<main></main>
+
+<div id="lightbox">
+  <div id="lb-viewport">
+    <div id="lb-spinner"></div>
+    <img id="lb-img" alt="">
+  </div>
+  <button id="lb-close" aria-label="Fechar">&#x2715;</button>
+  <button id="lb-prev" aria-label="Anterior">&#x276E;</button>
+  <button id="lb-next" aria-label="Próximo">&#x276F;</button>
+  <div id="lb-name"></div>
+</div>
+
+<script>
+  const CATEGORIES = [
+    {
+      label: 'Imprensa Geral',
+      pubs: [
+        { name: 'Público',            slug: 'publico' },
+        { name: 'Diário de Notícias', slug: 'diario-de-noticias' },
+        { name: 'Jornal de Notícias', slug: 'jornal-de-noticias' },
+        { name: 'Correio da Manhã',   slug: 'correio-da-manha' },
+        { name: 'Expresso',           slug: 'expresso' },
+      ],
+    },
+    {
+      label: 'Negócios',
+      pubs: [
+        { name: 'Jornal de Negócios',  slug: 'jornal-de-negocios' },
+        { name: 'O Jornal Económico',  slug: 'jornal-economico' },
+      ],
+    },
+    {
+      label: 'Desporto',
+      pubs: [
+        { name: 'A Bola',  slug: 'a-bola' },
+        { name: 'Record',  slug: 'record' },
+        { name: 'O Jogo',  slug: 'o-jogo' },
+      ],
+    },
+    {
+      label: 'Revistas',
+      pubs: [
+        { name: 'Visão',   slug: 'visao' },
+        { name: 'Sábado',  slug: 'sabado' },
+        { name: 'O Diabo', slug: 'o-diabo' },
+      ],
+    },
+    {
+      label: 'Regional',
+      pubs: [
+        { name: 'Açoriano Oriental', slug: 'acoriano-oriental' },
+        { name: 'Correio do Minho',  slug: 'correio-do-minho' },
+      ],
+    },
+    {
+      label: 'Internacional',
+      pubs: [
+        { name: 'El País', slug: 'elpais' },
+      ],
+    },
+  ];
+
+  const allPubs = CATEGORIES.flatMap(c => c.pubs);
+
+  // ── Build grid ──────────────────────────────────────────────
+
+  const main = document.querySelector('main');
+
+  CATEGORIES.forEach(cat => {
+    const section = document.createElement('div');
+    section.className = 'section';
+
+    const label = document.createElement('div');
+    label.className = 'section-label';
+    label.textContent = cat.label;
+    section.appendChild(label);
+
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+
+    cat.pubs.forEach(pub => {
+      const idx = allPubs.indexOf(pub);
+
+      const card = document.createElement('div');
+      card.className = 'card';
+
+      const inner = document.createElement('div');
+      inner.className = 'card-inner';
+      inner.dataset.index = idx;
+
+      const img = document.createElement('img');
+      img.src = `/cover/${pub.slug}`;
+      img.alt = pub.name;
+      img.loading = 'lazy';
+
+      img.onload = () => { inner.classList.add('loaded'); };
+      img.onerror = () => {
+        inner.classList.add('loaded');
+        inner.setAttribute('data-error', 'true');
+      };
+
+      const nameDiv = document.createElement('div');
+      nameDiv.className = 'card-name';
+      nameDiv.textContent = pub.name;
+
+      const errDiv = document.createElement('div');
+      errDiv.className = 'card-error';
+      errDiv.textContent = 'Capa indisponível';
+
+      inner.appendChild(img);
+      inner.appendChild(nameDiv);
+      inner.appendChild(errDiv);
+      card.appendChild(inner);
+      grid.appendChild(card);
+    });
+
+    section.appendChild(grid);
+    main.appendChild(section);
+  });
+
+  // Date header
+  document.querySelector('.date').textContent =
+    new Date().toLocaleDateString('pt-PT', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+
+  // Card click
+  main.addEventListener('click', e => {
+    const inner = e.target.closest('.card-inner');
+    if (!inner || inner.hasAttribute('data-error')) return;
+    openLightbox(parseInt(inner.dataset.index, 10));
+  });
+
+  // ── Lightbox ────────────────────────────────────────────────
+
+  const lightbox  = document.getElementById('lightbox');
+  const lbViewport = document.getElementById('lb-viewport');
+  const lbImg     = document.getElementById('lb-img');
+  const lbName    = document.getElementById('lb-name');
+  const lbClose   = document.getElementById('lb-close');
+  const lbPrev    = document.getElementById('lb-prev');
+  const lbNext    = document.getElementById('lb-next');
+  const lbSpinner = document.getElementById('lb-spinner');
+
+  let currentIndex = 0;
+
+  // Zoom/pan state
+  let scale = 1, tx = 0, ty = 0;
+  const ZOOMED_SCALE = 2.5;
+  const MAX_SCALE    = 4;
+
+  function applyTransform(animated) {
+    lbImg.style.transition = animated ? 'transform 0.2s ease' : 'transform 0s';
+    lbImg.style.transform  = `translate(${tx}px, ${ty}px) scale(${scale})`;
+  }
+
+  function clampTranslation() {
+    const imgW = lbImg.offsetWidth;
+    const imgH = lbImg.offsetHeight;
+    const vpW  = window.innerWidth;
+    const vpH  = window.innerHeight;
+    const maxTx = Math.max(0, (imgW * scale - vpW) / 2);
+    const maxTy = Math.max(0, (imgH * scale - vpH) / 2);
+    tx = Math.max(-maxTx, Math.min(maxTx, tx));
+    ty = Math.max(-maxTy, Math.min(maxTy, ty));
+  }
+
+  function resetZoom(animated) {
+    scale = 1; tx = 0; ty = 0;
+    applyTransform(animated !== false);
+  }
+
+  function zoomToPoint(newScale, vpX, vpY, animated) {
+    const rect = lbImg.getBoundingClientRect();
+    const cx = rect.left + rect.width  / 2;
+    const cy = rect.top  + rect.height / 2;
+    const f  = newScale / scale;
+    tx = tx + (vpX - cx) * (1 - f);
+    ty = ty + (vpY - cy) * (1 - f);
+    scale = newScale;
+    clampTranslation();
+    applyTransform(animated !== false);
+  }
+
+  function openLightbox(idx) {
+    currentIndex = idx;
+    const pub = allPubs[idx];
+    resetZoom(false);
+    lbImg.style.opacity = '0';
+    lbImg.style.transition = '';
+    lbImg.src = `/cover/${pub.slug}`;
+    lbName.textContent = pub.name;
+    lbSpinner.classList.remove('hidden');
+    lightbox.style.display = 'block';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    lightbox.style.display = 'none';
+    document.body.style.overflow = '';
+    lbImg.src = '';
+  }
+
+  function navigateLightbox(dir) {
+    openLightbox((currentIndex + dir + allPubs.length) % allPubs.length);
+  }
+
+  lbImg.addEventListener('load', () => {
+    lbSpinner.classList.add('hidden');
+    lbImg.style.transition = 'opacity 0.15s';
+    lbImg.style.opacity = '1';
+  });
+
+  lbImg.addEventListener('error', () => {
+    lbSpinner.classList.add('hidden');
+    lbImg.style.opacity = '0.3';
+  });
+
+  lbClose.addEventListener('click', closeLightbox);
+  lbPrev.addEventListener('click',  () => navigateLightbox(-1));
+  lbNext.addEventListener('click',  () => navigateLightbox(1));
+
+  document.addEventListener('keydown', e => {
+    if (lightbox.style.display === 'none') return;
+    if (e.key === 'Escape')      closeLightbox();
+    if (e.key === 'ArrowLeft')   navigateLightbox(-1);
+    if (e.key === 'ArrowRight')  navigateLightbox(1);
+  });
+
+  // ── Touch handling ───────────────────────────────────────────
+
+  let isDragging = false;
+  let dragStartX = 0, dragStartY = 0, dragStartTx = 0, dragStartTy = 0;
+
+  let pinchActive = false;
+  let pinchStartDist = 0, pinchStartScale = 1;
+
+  let lastTapTime = 0;
+
+  function touchDist(t) {
+    return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+  }
+
+  lbViewport.addEventListener('touchstart', e => {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+      isDragging = true;
+      pinchActive = false;
+      dragStartX  = e.touches[0].clientX;
+      dragStartY  = e.touches[0].clientY;
+      dragStartTx = tx;
+      dragStartTy = ty;
+    } else if (e.touches.length === 2) {
+      isDragging   = false;
+      pinchActive  = true;
+      pinchStartDist  = touchDist(e.touches);
+      pinchStartScale = scale;
+    }
+  }, { passive: false });
+
+  lbViewport.addEventListener('touchmove', e => {
+    e.preventDefault();
+    if (e.touches.length === 2 && pinchActive) {
+      const dist    = touchDist(e.touches);
+      const newScale = Math.max(1, Math.min(MAX_SCALE, pinchStartScale * dist / pinchStartDist));
+      const midX    = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+      const midY    = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      zoomToPoint(newScale, midX, midY, false);
+    } else if (e.touches.length === 1 && isDragging && scale > 1) {
+      tx = dragStartTx + (e.touches[0].clientX - dragStartX);
+      ty = dragStartTy + (e.touches[0].clientY - dragStartY);
+      clampTranslation();
+      applyTransform(false);
+    }
+  }, { passive: false });
+
+  lbViewport.addEventListener('touchend', e => {
+    e.preventDefault();
+    if (e.touches.length < 2) pinchActive = false;
+    if (e.touches.length === 0) {
+      isDragging = false;
+      // Snap to 1 if just below threshold
+      if (scale > 1 && scale < 1.1) resetZoom(true);
+      // Double-tap detection
+      if (e.changedTouches.length === 1) {
+        const now   = Date.now();
+        const touch = e.changedTouches[0];
+        if (now - lastTapTime < 300) {
+          lastTapTime = 0;
+          if (scale > 1) {
+            resetZoom(true);
+          } else {
+            zoomToPoint(ZOOMED_SCALE, touch.clientX, touch.clientY);
+          }
+        } else {
+          lastTapTime = now;
+        }
+      }
+    }
+  }, { passive: false });
+
+  // ── Mouse handling ───────────────────────────────────────────
+
+  let mouseDragging = false;
+  let mDragStartX = 0, mDragStartY = 0, mDragStartTx = 0, mDragStartTy = 0;
+
+  lbViewport.addEventListener('mousedown', e => {
+    if (e.button !== 0 || scale <= 1) return;
+    mouseDragging = true;
+    mDragStartX  = e.clientX;
+    mDragStartY  = e.clientY;
+    mDragStartTx = tx;
+    mDragStartTy = ty;
+    lbImg.classList.add('grabbing');
+    e.preventDefault();
+  });
+
+  window.addEventListener('mousemove', e => {
+    if (!mouseDragging) return;
+    tx = mDragStartTx + (e.clientX - mDragStartX);
+    ty = mDragStartTy + (e.clientY - mDragStartY);
+    clampTranslation();
+    applyTransform(false);
+  });
+
+  window.addEventListener('mouseup', () => {
+    mouseDragging = false;
+    lbImg.classList.remove('grabbing');
+  });
+
+  lbViewport.addEventListener('dblclick', e => {
+    if (scale > 1) {
+      resetZoom(true);
+    } else {
+      zoomToPoint(ZOOMED_SCALE, e.clientX, e.clientY);
+    }
+  });
+
+  lbViewport.addEventListener('wheel', e => {
+    e.preventDefault();
+    const factor   = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    const newScale = Math.max(1, Math.min(MAX_SCALE, scale * factor));
+    if (newScale === 1) {
+      resetZoom(true);
+    } else {
+      zoomToPoint(newScale, e.clientX, e.clientY, false);
+    }
+  }, { passive: false });
+</script>
+</body>
+</html>
