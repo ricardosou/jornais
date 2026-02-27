@@ -1,4 +1,15 @@
-<!DOCTYPE html>
+import { createClient } from 'npm:@supabase/supabase-js@2';
+
+const VERCAPAS_SLUGS = new Set([
+  'publico', 'diario-de-noticias', 'jornal-de-noticias', 'correio-da-manha', 'expresso',
+  'jornal-de-negocios', 'jornal-economico',
+  'a-bola', 'record', 'o-jogo',
+  'visao', 'sabado', 'o-diabo',
+  'acoriano-oriental', 'correio-do-minho',
+]);
+const ALL_SLUGS = new Set([...VERCAPAS_SLUGS, 'elpais']);
+
+const HTML_TEMPLATE = `<!DOCTYPE html>
 <html lang="pt">
 <head>
   <meta charset="UTF-8">
@@ -244,29 +255,29 @@
   </div>
   <button id="lb-close" aria-label="Fechar">&#x2715;</button>
   <button id="lb-prev" aria-label="Anterior">&#x276E;</button>
-  <button id="lb-next" aria-label="Próximo">&#x276F;</button>
+  <button id="lb-next" aria-label="Pr&#xF3;ximo">&#x276F;</button>
   <div id="lb-name"></div>
 </div>
 
 <script>
-  const COVER_BASE = 'https://pnllxhnhuaqcprqihfzi.supabase.co/functions/v1/serve/cover/';
+  const COVER_BASE = '__COVER_BASE__';
 
   const CATEGORIES = [
     {
       label: 'Imprensa Geral',
       pubs: [
-        { name: 'Público',            slug: 'publico' },
-        { name: 'Diário de Notícias', slug: 'diario-de-noticias' },
-        { name: 'Jornal de Notícias', slug: 'jornal-de-noticias' },
-        { name: 'Correio da Manhã',   slug: 'correio-da-manha' },
+        { name: 'P\u00FAblico',            slug: 'publico' },
+        { name: 'Di\u00E1rio de Not\u00EDcias', slug: 'diario-de-noticias' },
+        { name: 'Jornal de Not\u00EDcias', slug: 'jornal-de-noticias' },
+        { name: 'Correio da Manh\u00E3',   slug: 'correio-da-manha' },
         { name: 'Expresso',           slug: 'expresso' },
       ],
     },
     {
-      label: 'Negócios',
+      label: 'Neg\u00F3cios',
       pubs: [
-        { name: 'Jornal de Negócios',  slug: 'jornal-de-negocios' },
-        { name: 'O Jornal Económico',  slug: 'jornal-economico' },
+        { name: 'Jornal de Neg\u00F3cios',  slug: 'jornal-de-negocios' },
+        { name: 'O Jornal Econ\u00F3mico',  slug: 'jornal-economico' },
       ],
     },
     {
@@ -280,29 +291,29 @@
     {
       label: 'Revistas',
       pubs: [
-        { name: 'Visão',   slug: 'visao' },
-        { name: 'Sábado',  slug: 'sabado' },
+        { name: 'Vis\u00E3o',   slug: 'visao' },
+        { name: 'S\u00E1bado',  slug: 'sabado' },
         { name: 'O Diabo', slug: 'o-diabo' },
       ],
     },
     {
       label: 'Regional',
       pubs: [
-        { name: 'Açoriano Oriental', slug: 'acoriano-oriental' },
+        { name: 'A\u00E7oriano Oriental', slug: 'acoriano-oriental' },
         { name: 'Correio do Minho',  slug: 'correio-do-minho' },
       ],
     },
     {
       label: 'Internacional',
       pubs: [
-        { name: 'El País', slug: 'elpais' },
+        { name: 'El Pa\u00EDs', slug: 'elpais' },
       ],
     },
   ];
 
   const allPubs = CATEGORIES.flatMap(c => c.pubs);
 
-  // ── Build grid ──────────────────────────────────────────────
+  // \u2500\u2500 Build grid \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
   const main = document.querySelector('main');
 
@@ -329,7 +340,7 @@
       inner.dataset.index = idx;
 
       const img = document.createElement('img');
-      img.src = `${COVER_BASE}${pub.slug}`;
+      img.src = COVER_BASE + pub.slug;
       img.alt = pub.name;
       img.loading = 'lazy';
 
@@ -345,7 +356,7 @@
 
       const errDiv = document.createElement('div');
       errDiv.className = 'card-error';
-      errDiv.textContent = 'Capa indisponível';
+      errDiv.textContent = 'Capa indispon\u00EDvel';
 
       inner.appendChild(img);
       inner.appendChild(nameDiv);
@@ -371,7 +382,7 @@
     openLightbox(parseInt(inner.dataset.index, 10));
   });
 
-  // ── Lightbox ────────────────────────────────────────────────
+  // \u2500\u2500 Lightbox \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
   const lightbox  = document.getElementById('lightbox');
   const lbViewport = document.getElementById('lb-viewport');
@@ -391,7 +402,7 @@
 
   function applyTransform(animated) {
     lbImg.style.transition = animated ? 'transform 0.2s ease' : 'transform 0s';
-    lbImg.style.transform  = `translate(${tx}px, ${ty}px) scale(${scale})`;
+    lbImg.style.transform  = 'translate(' + tx + 'px, ' + ty + 'px) scale(' + scale + ')';
   }
 
   function clampTranslation() {
@@ -428,7 +439,7 @@
     resetZoom(false);
     lbImg.style.opacity = '0';
     lbImg.style.transition = '';
-    lbImg.src = `${COVER_BASE}${pub.slug}`;
+    lbImg.src = COVER_BASE + pub.slug;
     lbName.textContent = pub.name;
     lbSpinner.classList.remove('hidden');
     lightbox.style.display = 'block';
@@ -467,7 +478,7 @@
     if (e.key === 'ArrowRight')  navigateLightbox(1);
   });
 
-  // ── Touch handling ───────────────────────────────────────────
+  // \u2500\u2500 Touch handling \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
   let isDragging = false;
   let dragStartX = 0, dragStartY = 0, dragStartTx = 0, dragStartTy = 0;
@@ -519,9 +530,7 @@
     if (e.touches.length < 2) pinchActive = false;
     if (e.touches.length === 0) {
       isDragging = false;
-      // Snap to 1 if just below threshold
       if (scale > 1 && scale < 1.1) resetZoom(true);
-      // Double-tap detection
       if (e.changedTouches.length === 1) {
         const now   = Date.now();
         const touch = e.changedTouches[0];
@@ -539,7 +548,7 @@
     }
   }, { passive: false });
 
-  // ── Mouse handling ───────────────────────────────────────────
+  // \u2500\u2500 Mouse handling \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
   let mouseDragging = false;
   let mDragStartX = 0, mDragStartY = 0, mDragStartTx = 0, mDragStartTy = 0;
@@ -588,4 +597,42 @@
   }, { passive: false });
 </script>
 </body>
-</html>
+</html>`;
+
+Deno.serve(async (req) => {
+  const path = new URL(req.url).pathname;
+  const coverMatch = path.match(/\/cover\/([a-z0-9-]+)$/);
+
+  if (coverMatch) {
+    const slug = coverMatch[1];
+    if (!ALL_SLUGS.has(slug)) return new Response('Invalid slug', { status: 400 });
+
+    const supabase = createClient(
+      Deno.env.get('SUPABASE_URL')!,
+      Deno.env.get('SUPABASE_ANON_KEY')!,
+    );
+    const { data } = await supabase
+      .from('covers').select('image_url').eq('slug', slug).single();
+    if (!data) return new Response('Cover not available', { status: 404 });
+
+    const referer = slug === 'elpais'
+      ? 'https://en.kiosko.net/'
+      : 'https://www.vercapas.com/';
+
+    const imgRes = await fetch(data.image_url, {
+      headers: { Referer: referer, 'User-Agent': 'Mozilla/5.0 (compatible)' },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!imgRes.ok) return new Response('Upstream error', { status: imgRes.status });
+
+    return new Response(imgRes.body, {
+      headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' },
+    });
+  }
+
+  // Serve HTML — inject cover base URL
+  const myBase = `${Deno.env.get('SUPABASE_URL')}/functions/v1/serve`;
+  return new Response(HTML_TEMPLATE.replace('__COVER_BASE__', `${myBase}/cover/`), {
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
+});

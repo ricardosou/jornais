@@ -1,7 +1,9 @@
 {
   "permissions": {
     "allow": [
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(npx supabase:*)",
+      "Bash(~/.nvm/versions/node/v24.14.0/bin/npx supabase:*)"
     ]
   }
 }
