@@ -63,6 +63,16 @@ Deno.serve(async () => {
           .from('covers')
           .upsert({ slug, image_url, refreshed_at: new Date() });
         if (error) throw error;
+        const imgRes = await fetch(image_url, {
+          headers: { Referer: 'https://www.vercapas.com/', 'User-Agent': 'Mozilla/5.0 (compatible)' },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!imgRes.ok) throw new Error(`IMG_HTTP_${imgRes.status}`);
+        const imgBytes = await imgRes.arrayBuffer();
+        const { error: storageError } = await supabase.storage
+          .from('bucket1')
+          .upload(`covers/${slug}`, imgBytes, { contentType: 'image/jpeg', upsert: true });
+        if (storageError) throw storageError;
         results[slug] = { status: 'ok', url: image_url };
       } catch (err) {
         results[slug] = { status: 'error', error: err instanceof Error ? err.message : JSON.stringify(err) };
@@ -75,6 +85,16 @@ Deno.serve(async () => {
           .from('covers')
           .upsert({ slug: 'elpais', image_url, refreshed_at: new Date() });
         if (error) throw error;
+        const imgRes = await fetch(image_url, {
+          headers: { Referer: 'https://en.kiosko.net/', 'User-Agent': 'Mozilla/5.0 (compatible)' },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (!imgRes.ok) throw new Error(`IMG_HTTP_${imgRes.status}`);
+        const imgBytes = await imgRes.arrayBuffer();
+        const { error: storageError } = await supabase.storage
+          .from('bucket1')
+          .upload('covers/elpais', imgBytes, { contentType: 'image/jpeg', upsert: true });
+        if (storageError) throw storageError;
         results['elpais'] = { status: 'ok', url: image_url };
       } catch (err) {
         results['elpais'] = { status: 'error', error: err instanceof Error ? err.message : JSON.stringify(err) };
