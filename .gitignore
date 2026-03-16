@@ -37,6 +37,8 @@ bower_components
 # Compiled binary addons (https://nodejs.org/api/addons.html)
 build/Release
 
+# covers/ intentionally committed (served via GitHub Pages)
+
 # Dependency directories
 node_modules/
 jspm_packages/

@@ -250,7 +250,7 @@
 </div>
 
 <script>
-  const COVER_BASE = 'https://pnllxhnhuaqcprqihfzi.supabase.co/storage/v1/object/public/bucket1/covers/';
+  const COVER_BASE = 'covers/';
 
   const CATEGORIES = [
     {
@@ -330,7 +330,7 @@
       inner.dataset.index = idx;
 
       const img = document.createElement('img');
-      img.src = `${COVER_BASE}${pub.slug}`;
+      img.src = `${COVER_BASE}${pub.slug}.jpg`;
       img.alt = pub.name;
       img.loading = 'lazy';
 
@@ -429,7 +429,7 @@
     resetZoom(false);
     lbImg.style.opacity = '0';
     lbImg.style.transition = '';
-    lbImg.src = `${COVER_BASE}${pub.slug}`;
+    lbImg.src = `${COVER_BASE}${pub.slug}.jpg`;
     lbName.textContent = pub.name;
     lbSpinner.classList.remove('hidden');
     lightbox.style.display = 'block';
