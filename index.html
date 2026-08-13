@@ -473,6 +473,9 @@
   let isDragging = false;
   let dragStartX = 0, dragStartY = 0, dragStartTx = 0, dragStartTy = 0;
 
+  // Horizontal swipe-to-navigate (only when not zoomed).
+  let swiping = false;
+
   let pinchActive = false;
   let pinchStartDist = 0, pinchStartScale = 1;
 
@@ -487,6 +490,7 @@
     if (e.touches.length === 1) {
       isDragging = true;
       pinchActive = false;
+      swiping     = false;
       dragStartX  = e.touches[0].clientX;
       dragStartY  = e.touches[0].clientY;
       dragStartTx = tx;
@@ -512,6 +516,17 @@
       ty = dragStartTy + (e.touches[0].clientY - dragStartY);
       clampTranslation();
       applyTransform(false);
+    } else if (e.touches.length === 1 && isDragging && scale === 1) {
+      // Not zoomed: track a predominantly horizontal drag as a swipe and let
+      // the cover follow the finger (with a little resistance) for feedback.
+      const dx = e.touches[0].clientX - dragStartX;
+      const dy = e.touches[0].clientY - dragStartY;
+      if (swiping || (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 10)) {
+        swiping = true;
+        tx = dx * 0.6;
+        ty = 0;
+        applyTransform(false);
+      }
     }
   }, { passive: false });
 
@@ -520,6 +535,17 @@
     if (e.touches.length < 2) pinchActive = false;
     if (e.touches.length === 0) {
       isDragging = false;
+      // Resolve a horizontal swipe: past the threshold navigates (mirroring the
+      // ‹ / › arrows), otherwise the cover snaps back into place.
+      if (swiping) {
+        swiping = false;
+        const dx = e.changedTouches[0].clientX - dragStartX;
+        const threshold = Math.min(80, window.innerWidth * 0.2);
+        if (dx <= -threshold)      navigateLightbox(1);   // swipe left → next
+        else if (dx >= threshold)  navigateLightbox(-1);  // swipe right → prev
+        else                       resetZoom(true);        // not far enough
+        return;
+      }
       // Snap to 1 if just below threshold
       if (scale > 1 && scale < 1.1) resetZoom(true);
       // Double-tap detection
