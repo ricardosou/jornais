@@ -14,6 +14,26 @@ const VERCAPAS_SLUGS = [
 
 const COVERS_DIR = path.join(__dirname, '..', 'covers');
 
+// A full, realistic browser User-Agent + companion headers. Cloudflare's bot
+// heuristics block datacenter IPs (e.g. GitHub Actions runners) aggressively
+// when the request also carries a weak UA like "Mozilla/5.0 (compatible)".
+// Presenting as a real Chrome browser is what lets the CI run pass.
+const BROWSER_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+
+function browserHeaders(extra) {
+  return {
+    'User-Agent': BROWSER_UA,
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+    'Accept-Language': 'pt-PT,pt;q=0.9,en;q=0.8',
+    'Accept-Encoding': 'identity',
+    'Sec-Fetch-Dest': 'document',
+    'Sec-Fetch-Mode': 'navigate',
+    'Sec-Fetch-Site': 'none',
+    'Upgrade-Insecure-Requests': '1',
+    ...extra,
+  };
+}
+
 function httpsGet(options, timeoutMs = 15000, maxRedirects = 3) {
   return new Promise((resolve, reject) => {
     let timer;
@@ -77,10 +97,7 @@ async function getVercapasImageUrl(slug) {
       hostname: 'www.vercapas.com',
       path: `/capa/${slug}.html`,
       method: 'GET',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible)',
-        'Accept': 'text/html',
-      },
+      headers: browserHeaders(),
     });
   } catch (err) {
     throw err.message === 'TIMEOUT' ? err : new Error('UPSTREAM_ERROR');
@@ -112,10 +129,13 @@ async function fetchVercapas(slug) {
     hostname: u.hostname,
     path: u.pathname + (u.search || ''),
     method: 'GET',
-    headers: {
+    headers: browserHeaders({
       'Referer': 'https://www.vercapas.com/',
-      'User-Agent': 'Mozilla/5.0 (compatible)',
-    },
+      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+      'Sec-Fetch-Dest': 'image',
+      'Sec-Fetch-Mode': 'no-cors',
+      'Sec-Fetch-Site': 'same-site',
+    }),
   });
 
   if (imgRes.statusCode !== 200) {
@@ -146,10 +166,13 @@ async function fetchElPais() {
         hostname: u.hostname,
         path: u.pathname,
         method: 'GET',
-        headers: {
+        headers: browserHeaders({
           'Referer': 'https://en.kiosko.net/',
-          'User-Agent': 'Mozilla/5.0 (compatible)',
-        },
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          'Sec-Fetch-Dest': 'image',
+          'Sec-Fetch-Mode': 'no-cors',
+          'Sec-Fetch-Site': 'cross-site',
+        }),
       });
     } catch (err) {
       if (offset === 1) throw err;
