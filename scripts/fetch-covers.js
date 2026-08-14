@@ -12,6 +12,30 @@ const VERCAPAS_SLUGS = [
   'acoriano-oriental', 'correio-do-minho',
 ];
 
+// sapo.pt is the primary source: it carries every title, isn't behind Cloudflare
+// (so datacenter IPs reach it directly, no reader proxy needed), and serves clean
+// JPEGs. Map each output slug to its sapo section + "<slug>-<id>" route segment
+// (the id is a stable per-publication number). El País is also here so it gets a
+// primary before the kiosko fallback.
+const SAPO_PUBS = {
+  'publico':            { section: 'nacional',      path: 'publico-4090' },
+  'diario-de-noticias': { section: 'nacional',      path: 'diario-de-noticias-4074' },
+  'jornal-de-noticias': { section: 'nacional',      path: 'jornal-de-noticias-4085' },
+  'correio-da-manha':   { section: 'nacional',      path: 'correio-da-manha-4063' },
+  'expresso':           { section: 'nacional',      path: 'expresso-4098' },
+  'jornal-de-negocios': { section: 'economia',      path: 'jornal-de-negocios-4108' },
+  'jornal-economico':   { section: 'economia',      path: 'jornal-economico-10140' },
+  'a-bola':             { section: 'desporto',      path: 'a-bola-4137' },
+  'record':             { section: 'desporto',      path: 'record-4139' },
+  'o-jogo':             { section: 'desporto',      path: 'o-jogo-4138' },
+  'visao':              { section: 'nacional',      path: 'visao-4104' },
+  'sabado':             { section: 'nacional',      path: 'sabado-4103' },
+  'o-diabo':            { section: 'nacional',      path: 'o-diabo-4101' },
+  'acoriano-oriental':  { section: 'local',         path: 'acoriano-oriental-3925' },
+  'correio-do-minho':   { section: 'local',         path: 'correio-do-minho-3940' },
+  'elpais':             { section: 'internacional', path: 'el-pais-4404' },
+};
+
 const COVERS_DIR = path.join(__dirname, '..', 'covers');
 
 // A full, realistic browser User-Agent + companion headers. Cloudflare's bot
@@ -98,6 +122,67 @@ function saveBody(res, filePath) {
     out.on('error', reject);
     res.on('error', reject);
   });
+}
+
+// ── sapo.pt (primary source) ─────────────────────────────────
+
+async function fetchText(hostname, path) {
+  const res = await httpsGet({
+    hostname,
+    path,
+    method: 'GET',
+    headers: browserHeaders(),
+  });
+  if (res.statusCode !== 200) {
+    res.resume();
+    throw new Error(`HTTP_${res.statusCode}`);
+  }
+  return readBody(res);
+}
+
+// Section listings are shared across all papers in that section, so fetch each
+// at most once. Cache the in-flight promise so concurrent workers don't refetch.
+const sapoSectionCache = new Map();
+function getSapoSection(section) {
+  if (!sapoSectionCache.has(section)) {
+    sapoSectionCache.set(section, fetchText('sapo.pt', `/noticias/jornais/${section}`));
+  }
+  return sapoSectionCache.get(section);
+}
+
+async function fetchSapo(outSlug) {
+  const pub = SAPO_PUBS[outSlug];
+  if (!pub) throw new Error('SAPO_NO_MAP');
+
+  // The dateless route 404s and weeklies only exist on publish days, so read the
+  // current edition's route (with its date) straight from the section listing.
+  const listing = await getSapoSection(pub.section);
+  const routeRe = new RegExp(`noticias/jornais/${pub.section}/${pub.path}/\\d+`);
+  const routeMatch = listing.match(routeRe);
+  if (!routeMatch) throw new Error('SAPO_NO_ROUTE');
+
+  // The detail page holds the cover as a thumbs.web.sapo.io image URL.
+  const detail = await fetchText('sapo.pt', `/${routeMatch[0]}`);
+  const picMatch = detail.match(/thumbs\.web\.sapo\.io\/\?pic=[^"'\s]+/);
+  if (!picMatch) throw new Error('SAPO_NO_IMAGE');
+
+  // Normalise: decode &amp; and drop webp so we save a plain JPEG.
+  const thumbUrl = 'https://' + picMatch[0].replace(/&amp;/g, '&').replace(/&webp=1/, '');
+  const u = new URL(thumbUrl);
+  const imgRes = await httpsGet({
+    hostname: u.hostname,
+    path: u.pathname + u.search,
+    method: 'GET',
+    headers: browserHeaders({
+      'Referer': 'https://sapo.pt/',
+      'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+    }),
+  });
+  if (imgRes.statusCode !== 200) {
+    imgRes.resume();
+    throw new Error(`SAPO_IMG_HTTP_${imgRes.statusCode}`);
+  }
+  await saveBody(imgRes, path.join(COVERS_DIR, `${outSlug}.jpg`));
 }
 
 async function getVercapasImageUrl(slug) {
@@ -259,17 +344,20 @@ async function fetchKiosko(section, kioskoSlug, outSlug) {
   throw new Error(`KIOSKO_HTTP_${lastStatus}`);
 }
 
-// Output publications, in display order. Each maps to an ordered list of
-// sources; the first that succeeds wins, so a flaky primary is backed by the
-// next. kiosko only carries these PT titles (its slugs differ), so most papers
-// have vercapas as their sole source and rely on its internal retries.
+// kiosko carries only these PT titles (its slugs differ); it's the last resort.
 const KIOSKO_BACKUP = {
   publico: { section: 'pt', slug: 'publico' },
   'a-bola': { section: 'pt', slug: 'a_bola' },
 };
 
+// Each publication maps to an ordered list of sources; the first that succeeds
+// wins, so a flaky source is backed by the next. Order: sapo (primary, full
+// coverage, datacenter-native) → vercapas via jina → kiosko.
 function sourcesFor(outSlug) {
   const sources = [];
+  if (SAPO_PUBS[outSlug]) {
+    sources.push({ name: 'sapo', run: () => fetchSapo(outSlug) });
+  }
   if (VERCAPAS_SLUGS.includes(outSlug)) {
     sources.push({ name: 'vercapas', run: () => fetchVercapas(outSlug) });
   }
