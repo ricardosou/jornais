@@ -107,18 +107,21 @@ async function getVercapasImageUrl(slug) {
   // and ask it for raw HTML (X-Return-Format: html) so the hashed cover URL
   // survives — the default Markdown conversion drops it.
   const target = `https://www.vercapas.com/capa/${slug}.html`;
-  // Send NO User-Agent: r.jina.ai forwards request headers to the origin, and a
-  // browser UA over jina's own TLS/IP fingerprint trips Cloudflare's challenge
-  // (403 "Just a moment"). With no UA, jina uses its own consistent fingerprint
-  // and Cloudflare lets it through. X-Return-Format keeps the raw HTML (the
-  // default Markdown conversion drops the hashed cover URL).
-  const headers = { 'X-Return-Format': 'html' };
-  if (JINA_API_KEY) headers['Authorization'] = `Bearer ${JINA_API_KEY}`;
+  const pattern = new RegExp(`covers/${slug}/\\d+/${slug}-[\\d-]+[a-f0-9]+\\.jpg`);
 
-  // Retry on jina rate limiting (429) / transient block (403/5xx) with backoff.
+  // Retry on rate limiting (429), transient block (403/5xx), AND on a 200 that
+  // lacks the cover URL — jina caches responses, and it occasionally caches a
+  // Cloudflare interstitial ("Just a moment", 200) or a partial render, which
+  // shows up as NO_MATCH. X-No-Cache on retries forces a fresh origin fetch.
   const maxAttempts = 5;
-  let html;
-  for (let attempt = 1; ; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Send NO User-Agent: r.jina.ai forwards request headers to the origin, and
+    // a browser UA over jina's own TLS/IP fingerprint trips Cloudflare's
+    // challenge (403). With no UA, jina uses its own consistent fingerprint.
+    const headers = { 'X-Return-Format': 'html' };
+    if (attempt > 1) headers['X-No-Cache'] = 'true';
+    if (JINA_API_KEY) headers['Authorization'] = `Bearer ${JINA_API_KEY}`;
+
     let res;
     try {
       res = await httpsGet({
@@ -136,12 +139,16 @@ async function getVercapasImageUrl(slug) {
     }
 
     if (res.statusCode === 200) {
+      let html = '';
       try {
         html = await readBody(res);
-      } catch {
-        throw new Error('UPSTREAM_ERROR');
-      }
-      break;
+      } catch { /* fall through to retry */ }
+      const match = html.match(pattern);
+      if (match) return `https://imgs.vercapas.com/${match[0]}`;
+      // 200 but no cover URL — retry with a fresh render.
+      if (attempt >= maxAttempts) throw new Error('NO_MATCH');
+      await sleep(attempt * 2000);
+      continue;
     }
 
     res.resume();
@@ -152,12 +159,7 @@ async function getVercapasImageUrl(slug) {
     }
     throw new Error(`VERCAPAS_HTTP_${res.statusCode}`);
   }
-
-  const pattern = new RegExp(`covers/${slug}/\\d+/${slug}-[\\d-]+[a-f0-9]+\\.jpg`);
-  const match = html.match(pattern);
-  if (!match) throw new Error('NO_MATCH');
-
-  return `https://imgs.vercapas.com/${match[0]}`;
+  throw new Error('NO_MATCH');
 }
 
 // Fetch the cover image. imgs.vercapas.com has served datacenter IPs fine for a
@@ -206,24 +208,29 @@ async function fetchVercapas(slug) {
   await saveBody(imgRes, filePath);
 }
 
-function getKioskoUrl(dateOffsetDays = 0) {
+function utcYmd(offsetDays) {
   const d = new Date();
-  d.setUTCDate(d.getUTCDate() - dateOffsetDays);
-  const yyyy = d.getUTCFullYear();
-  const mm = String(d.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(d.getUTCDate()).padStart(2, '0');
-  return `https://img.kiosko.net/${yyyy}/${mm}/${dd}/es/elpais.750.jpg`;
+  d.setUTCDate(d.getUTCDate() - offsetDays);
+  return {
+    yyyy: d.getUTCFullYear(),
+    mm: String(d.getUTCMonth() + 1).padStart(2, '0'),
+    dd: String(d.getUTCDate()).padStart(2, '0'),
+  };
 }
 
-async function fetchElPais() {
+// kiosko.net serves front pages fine from datacenter IPs (unlike vercapas), so
+// it works both as the primary source for El País and as a backup for the few
+// Portuguese titles it carries. Note kiosko's slugs differ (e.g. a_bola) and it
+// only publishes a handful of PT papers. Falls back to yesterday's date on 404.
+async function fetchKiosko(section, kioskoSlug, outSlug) {
+  let lastStatus = 'ERR';
   for (let offset = 0; offset <= 1; offset++) {
-    const imgUrl = getKioskoUrl(offset);
-    const u = new URL(imgUrl);
+    const { yyyy, mm, dd } = utcYmd(offset);
     let imgRes;
     try {
       imgRes = await httpsGet({
-        hostname: u.hostname,
-        path: u.pathname,
+        hostname: 'img.kiosko.net',
+        path: `/${yyyy}/${mm}/${dd}/${section}/${kioskoSlug}.750.jpg`,
         method: 'GET',
         headers: browserHeaders({
           'Referer': 'https://en.kiosko.net/',
@@ -238,22 +245,59 @@ async function fetchElPais() {
       continue;
     }
 
-    if (imgRes.statusCode === 404) {
-      imgRes.resume();
-      if (offset === 0) continue;
-      throw new Error('ELPAIS_NOT_FOUND');
+    if (imgRes.statusCode === 200) {
+      await saveBody(imgRes, path.join(COVERS_DIR, `${outSlug}.jpg`));
+      return;
     }
 
-    if (imgRes.statusCode !== 200) {
-      imgRes.resume();
-      throw new Error(`ELPAIS_HTTP_${imgRes.statusCode}`);
-    }
-
-    const filePath = path.join(COVERS_DIR, 'elpais.jpg');
-    await saveBody(imgRes, filePath);
-    return;
+    imgRes.resume();
+    lastStatus = imgRes.statusCode;
+    // 404 for today → the edition may not be up yet, try yesterday.
+    if (imgRes.statusCode === 404 && offset === 0) continue;
+    throw new Error(`KIOSKO_HTTP_${imgRes.statusCode}`);
   }
-  throw new Error('ELPAIS_NOT_FOUND');
+  throw new Error(`KIOSKO_HTTP_${lastStatus}`);
+}
+
+// Output publications, in display order. Each maps to an ordered list of
+// sources; the first that succeeds wins, so a flaky primary is backed by the
+// next. kiosko only carries these PT titles (its slugs differ), so most papers
+// have vercapas as their sole source and rely on its internal retries.
+const KIOSKO_BACKUP = {
+  publico: { section: 'pt', slug: 'publico' },
+  'a-bola': { section: 'pt', slug: 'a_bola' },
+};
+
+function sourcesFor(outSlug) {
+  const sources = [];
+  if (VERCAPAS_SLUGS.includes(outSlug)) {
+    sources.push({ name: 'vercapas', run: () => fetchVercapas(outSlug) });
+  }
+  if (KIOSKO_BACKUP[outSlug]) {
+    const k = KIOSKO_BACKUP[outSlug];
+    sources.push({ name: 'kiosko', run: () => fetchKiosko(k.section, k.slug, outSlug) });
+  }
+  if (outSlug === 'elpais') {
+    sources.push({ name: 'kiosko', run: () => fetchKiosko('es', 'elpais', 'elpais') });
+  }
+  return sources;
+}
+
+// Try each source in order until one saves the cover; aggregate errors so a
+// total failure reports why every source failed.
+async function fetchCover(outSlug) {
+  const sources = sourcesFor(outSlug);
+  if (sources.length === 0) throw new Error('NO_SOURCES');
+  const errors = [];
+  for (const source of sources) {
+    try {
+      await source.run();
+      return source.name;
+    } catch (err) {
+      errors.push(`${source.name}: ${err.message}`);
+    }
+  }
+  throw new Error(errors.join(' | '));
 }
 
 async function runPool(tasks, concurrency) {
@@ -261,10 +305,10 @@ async function runPool(tasks, concurrency) {
   const results = [];
   async function worker() {
     while (next < tasks.length) {
-      const { slug, fn } = tasks[next++];
+      const { slug } = tasks[next++];
       try {
-        await fn();
-        console.log(`✓ ${slug}`);
+        const via = await fetchCover(slug);
+        console.log(`✓ ${slug} (${via})`);
         results.push(true);
       } catch (err) {
         console.error(`✗ ${slug}: ${err.message}`);
@@ -279,10 +323,7 @@ async function runPool(tasks, concurrency) {
 async function main() {
   fs.mkdirSync(COVERS_DIR, { recursive: true });
 
-  const tasks = [
-    ...VERCAPAS_SLUGS.map(slug => ({ slug, fn: () => fetchVercapas(slug) })),
-    { slug: 'elpais', fn: fetchElPais },
-  ];
+  const tasks = [...VERCAPAS_SLUGS, 'elpais'].map(slug => ({ slug }));
 
   // Cap concurrency so we don't burst all requests at the jina reader's
   // per-IP rate limit at once; retries in getVercapasImageUrl absorb the rest.
