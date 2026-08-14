@@ -25,6 +25,8 @@ const SAPO_PUBS = {
   'expresso':           { section: 'nacional',      path: 'expresso-4098' },
   'jornal-de-negocios': { section: 'economia',      path: 'jornal-de-negocios-4108' },
   'jornal-economico':   { section: 'economia',      path: 'jornal-economico-10140' },
+  'dinheiro-vivo':      { section: 'economia',      path: 'dinheiro-vivo-dn-jn-5941' },
+  'expresso-economia':  { section: 'economia',      path: 'expresso-economia-6152' },
   'a-bola':             { section: 'desporto',      path: 'a-bola-4137' },
   'record':             { section: 'desporto',      path: 'record-4139' },
   'o-jogo':             { section: 'desporto',      path: 'o-jogo-4138' },
@@ -411,7 +413,9 @@ async function runPool(tasks, concurrency) {
 async function main() {
   fs.mkdirSync(COVERS_DIR, { recursive: true });
 
-  const tasks = [...VERCAPAS_SLUGS, 'elpais'].map(slug => ({ slug }));
+  // sapo maps every publication, so its keys are the full output list (includes
+  // sapo-only titles that vercapas/kiosko don't carry).
+  const tasks = Object.keys(SAPO_PUBS).map(slug => ({ slug }));
 
   // Cap concurrency so we don't burst all requests at the jina reader's
   // per-IP rate limit at once; retries in getVercapasImageUrl absorb the rest.
